@@ -10,7 +10,6 @@
 | Service | URL |
 |---|---|
 | Server UI | [ui.scimsandbox.net](https://ui.scimsandbox.net/) |
-| Server Impl | [api.scimsandbox.net](https://api.scimsandbox.net/) |
 | Validator UI | [val.scimsandbox.net](https://val.scimsandbox.net/) |
 
 ## Repositories
