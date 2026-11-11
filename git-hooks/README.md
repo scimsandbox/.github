@@ -30,7 +30,7 @@ brew install gitleaks
 ./install.sh --local /path/to/repo
 ```
 
-Copies `pre-commit` and `gitleaks.toml` into that repository's `.git/hooks/` directory without modifying global Git settings. If an existing `.git/hooks/pre-commit` hook is present, it is backed up to `pre-commit.pre-gitleaks` and executed automatically after `gitleaks` passes.
+Copies `pre-commit` and `gitleaks.toml` into that repository's `.git/hooks/` directory without modifying global Git settings. If an existing `.git/hooks/pre-commit` hook is present, it is backed up to `pre-commit.pre-gitleaks` and executed automatically after `gitleaks` passes (pass `--force` if you intentionally want to replace an older `pre-commit.pre-gitleaks` backup).
 
 ## Handling Intentional Test Fixtures / False Positives
 

@@ -26,7 +26,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
+          filter: blob:none
+
+      - name: Fetch PR commit range
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags --filter=blob:none --shallow-exclude="refs/heads/${BASE_REF}" origin "${HEAD_SHA}"
+          git fetch --no-tags --filter=blob:none --depth=2 origin "${BASE_SHA}"
+
+          if ! git merge-base --is-ancestor "${BASE_SHA}" "${HEAD_SHA}" 2>/dev/null; then
+            git fetch --no-tags --filter=blob:none --unshallow origin
+          fi
 
       - name: Download and verify Gitleaks
         shell: bash

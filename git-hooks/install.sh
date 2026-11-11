@@ -31,14 +31,15 @@ FORWARDED_HOOKS=(
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--global | --local [repo-path] | --uninstall]
+Usage: $(basename "$0") [--global | --local [repo-path] [--force] | --uninstall]
 
 Options:
-  --global             Install gitleaks pre-commit hook globally in ${GLOBAL_HOOKS_DIR} (default),
-                       chaining into any previous global core.hooksPath and repo-local hooks.
-  --local [repo-path]  Install only into a single repository's hooks directory (defaults to current dir),
-                       backing up and chaining any existing pre-commit hook as pre-commit.pre-gitleaks.
-  --uninstall          Restore previous global core.hooksPath (or unset if none existed; leaves files in ${GLOBAL_HOOKS_DIR}).
+  --global                       Install gitleaks pre-commit hook globally in ${GLOBAL_HOOKS_DIR} (default),
+                                 chaining into any previous global core.hooksPath and repo-local hooks.
+  --local [repo-path] [--force]  Install only into a single repository's hooks directory (defaults to current dir),
+                                 backing up and chaining any existing pre-commit hook as pre-commit.pre-gitleaks
+                                 (pass --force to overwrite an existing pre-commit.pre-gitleaks backup).
+  --uninstall                    Restore previous global core.hooksPath (or unset if none existed; leaves files in ${GLOBAL_HOOKS_DIR}).
 EOF
 }
 
@@ -69,7 +70,25 @@ case "${MODE}" in
     ;;
   --local)
     check_gitleaks_installed
-    TARGET_REPO="${2:-.}"
+    shift || true
+    TARGET_REPO="."
+    FORCE_BACKUP=0
+    for arg in "$@"; do
+      case "${arg}" in
+        --force|-f)
+          FORCE_BACKUP=1
+          ;;
+        -*)
+          echo "Unknown option for --local: ${arg}" >&2
+          usage >&2
+          exit 1
+          ;;
+        *)
+          TARGET_REPO="${arg}"
+          ;;
+      esac
+    done
+
     if ! COMMON_DIR="$(git -C "${TARGET_REPO}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
       RAW_COMMON_DIR="$(git -C "${TARGET_REPO}" rev-parse --git-common-dir)"
       COMMON_DIR="$(cd "${TARGET_REPO}" && cd "${RAW_COMMON_DIR}" && pwd -P)"
@@ -78,8 +97,9 @@ case "${MODE}" in
     mkdir -p "${HOOKS_TARGET}"
 
     if [[ -f "${HOOKS_TARGET}/pre-commit" ]] && ! grep -q '^# scimsandbox-gitleaks-pre-commit$' "${HOOKS_TARGET}/pre-commit" 2>/dev/null; then
-      if [[ -e "${HOOKS_TARGET}/pre-commit.pre-gitleaks" ]]; then
-        echo "ERROR: Refusing to overwrite existing backup ${HOOKS_TARGET}/pre-commit.pre-gitleaks" >&2
+      if [[ -e "${HOOKS_TARGET}/pre-commit.pre-gitleaks" && "${FORCE_BACKUP}" -ne 1 ]]; then
+        echo "ERROR: Existing backup found at ${HOOKS_TARGET}/pre-commit.pre-gitleaks." >&2
+        echo "Delete the stale backup file manually or re-run with '--local ${TARGET_REPO} --force' to overwrite it." >&2
         exit 1
       fi
       cp -p "${HOOKS_TARGET}/pre-commit" "${HOOKS_TARGET}/pre-commit.pre-gitleaks"
