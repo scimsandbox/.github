@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       dependency-review:
-        description: "Run GitHub Dependency & License Review on pull requests (public repos or GHAS)"
+        description: "Run GitHub Dependency & License Review on pull requests (public repos only)"
         required: false
         type: boolean
         default: true

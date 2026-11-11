@@ -21,7 +21,7 @@ Shared GitHub Actions `workflow_call` definitions consumed across `scimsandbox` 
 * **Supported triggers:** `pull_request`, `push`, `schedule`, `workflow_dispatch` *(do **not** use `pull_request_target`)*.
 * **Public vs. private repo behavior:**
   * `secret-scan` (Gitleaks) runs on all repositories (public and private) and scans full commit ranges (`base..head` on PRs, `before..after` on pushes, `--all` on schedule/dispatch).
-  * `dependency-review` runs on public repository `pull_request` events and skips automatically when `github.event.repository.private` is `true` (for private repos such as `scim-website` without paid GitHub Code Security).
+  * `dependency-review` runs on public repository `pull_request` events (`!github.event.repository.private`) and skips automatically on private repositories (such as `scim-website`).
 
 ### Canonical Caller (`.github/workflows/security-pr.yml`)
 
@@ -55,7 +55,7 @@ jobs:
 
 * **Supported triggers:** `pull_request`, `push`, `schedule`, `release`, `workflow_dispatch`.
 * **Base image requirement:** Base images in `Dockerfile` must be publicly pullable (such as Docker Hub / `dhi.io` public images or `gcr.io/distroless`). Private container base images require authenticating in a custom workflow instead.
-* **SARIF upload behavior:** Runs on public non-fork runs (`!github.event.repository.private` and same-repo PRs) with `continue-on-error: true`. On fork PRs or private repos, SARIF upload is skipped while the `exit-code: "1"` table step **always** enforces the vulnerability gate.
+* **SARIF upload behavior:** Runs on public non-fork runs (`!github.event.repository.private` and same-repo PRs) with `continue-on-error: true`. On fork PRs or private repos, SARIF generation/upload is skipped while the `exit-code: "1"` table step **always** enforces the vulnerability gate.
 * **Multi-image repositories:** Override `category` (e.g., `trivy-image-api`, `trivy-image-worker`) so SARIF uploads do not overwrite each other.
 
 ### Canonical Caller (`.github/workflows/trivy.yml`)

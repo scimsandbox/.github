@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GLOBAL_HOOKS_DIR="${HOME}/.config/git/hooks"
 BACKUP_FILE="${GLOBAL_HOOKS_DIR}/.previous-hooks-path"
+
+check_gitleaks_installed() {
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "WARNING: 'gitleaks' was not found in PATH. Commits will be blocked until you install it (e.g., brew install gitleaks)." >&2
+  fi
+}
 
 FORWARDED_HOOKS=(
   applypatch-msg
@@ -38,6 +46,7 @@ MODE="${1:---global}"
 
 case "${MODE}" in
   --global)
+    check_gitleaks_installed
     mkdir -p "${GLOBAL_HOOKS_DIR}"
 
     EXISTING_PATH="$(git config --global --get core.hooksPath || true)"
@@ -59,6 +68,7 @@ case "${MODE}" in
     echo "Installed global gitleaks pre-commit hook (with pass-through hooks) at ${GLOBAL_HOOKS_DIR}"
     ;;
   --local)
+    check_gitleaks_installed
     TARGET_REPO="${2:-.}"
     if ! COMMON_DIR="$(git -C "${TARGET_REPO}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
       RAW_COMMON_DIR="$(git -C "${TARGET_REPO}" rev-parse --git-common-dir)"
@@ -68,6 +78,10 @@ case "${MODE}" in
     mkdir -p "${HOOKS_TARGET}"
 
     if [[ -f "${HOOKS_TARGET}/pre-commit" ]] && ! grep -q '^# scimsandbox-gitleaks-pre-commit$' "${HOOKS_TARGET}/pre-commit" 2>/dev/null; then
+      if [[ -e "${HOOKS_TARGET}/pre-commit.pre-gitleaks" ]]; then
+        echo "ERROR: Refusing to overwrite existing backup ${HOOKS_TARGET}/pre-commit.pre-gitleaks" >&2
+        exit 1
+      fi
       cp -p "${HOOKS_TARGET}/pre-commit" "${HOOKS_TARGET}/pre-commit.pre-gitleaks"
       echo "Backed up existing repo pre-commit hook to ${HOOKS_TARGET}/pre-commit.pre-gitleaks"
     fi

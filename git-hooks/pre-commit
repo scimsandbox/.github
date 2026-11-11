@@ -10,7 +10,7 @@ SELF_REAL="${HOOK_DIR}/$(basename "${BASH_SOURCE[0]}")"
 
 if [[ "${SKIP_GITLEAKS:-0}" == "1" ]]; then
   echo "[gitleaks] SKIP_GITLEAKS=1 set — skipping staged secret scan." >&2
-else
+elif [[ "${SCIMSANDBOX_GITLEAKS_RAN:-0}" != "1" ]]; then
   if ! command -v gitleaks >/dev/null 2>&1; then
     echo "[gitleaks] ERROR: 'gitleaks' is not installed (run: brew install gitleaks, or bypass once with SKIP_GITLEAKS=1)." >&2
     exit 1
@@ -31,6 +31,7 @@ else
     echo "[gitleaks] If this is an intentional dummy value, add '# gitleaks:allow' inline, configure .gitleaks.toml, or run SKIP_GITLEAKS=1 git commit." >&2
     exit 1
   fi
+  export SCIMSANDBOX_GITLEAKS_RAN=1
 fi
 
 run_chained_hook() {
