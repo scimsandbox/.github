@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Ensure Homebrew binaries are available when committing from GUI Git clients (IDEs, etc.)
+export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}"
+
+if [[ "${SKIP_GITLEAKS:-0}" == "1" ]]; then
+  echo "[gitleaks] SKIP_GITLEAKS=1 set — skipping staged secret scan." >&2
+else
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "[gitleaks] ERROR: 'gitleaks' is not installed (run: brew install gitleaks, or bypass once with SKIP_GITLEAKS=1)." >&2
+    exit 1
+  fi
+
+  HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+  CONFIG_ARGS=()
+  if [[ -f "${REPO_ROOT}/.gitleaks.toml" ]]; then
+    CONFIG_ARGS=(--config "${REPO_ROOT}/.gitleaks.toml")
+  elif [[ -f "${HOOK_DIR}/gitleaks.toml" ]]; then
+    CONFIG_ARGS=(--config "${HOOK_DIR}/gitleaks.toml")
+  fi
+
+  if ! gitleaks git --pre-commit --staged --redact=100 --verbose --log-level=warn --no-banner "${CONFIG_ARGS[@]}" "${REPO_ROOT}"; then
+    echo "" >&2
+    echo "[gitleaks] Commit blocked: potential secret detected in staged changes." >&2
+    echo "[gitleaks] If this is an intentional dummy value, add '# gitleaks:allow' inline, configure .gitleaks.toml, or run SKIP_GITLEAKS=1 git commit." >&2
+    exit 1
+  fi
+fi
+
+# Chain into repo-local .git/hooks/pre-commit if one exists
+GIT_DIR_PATH="$(git rev-parse --git-dir 2>/dev/null || true)"
+if [[ -n "${GIT_DIR_PATH}" ]]; then
+  LOCAL_HOOK="${GIT_DIR_PATH}/hooks/pre-commit"
+  SELF_REAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  if [[ -f "${LOCAL_HOOK}" && -x "${LOCAL_HOOK}" ]]; then
+    LOCAL_REAL="$(cd "$(dirname "${LOCAL_HOOK}")" && pwd)/$(basename "${LOCAL_HOOK}")"
+    if [[ "${LOCAL_REAL}" != "${SELF_REAL}" ]]; then
+      exec "${LOCAL_HOOK}" "$@"
+    fi
+  fi
+fi
