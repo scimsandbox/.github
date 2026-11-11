@@ -8,14 +8,25 @@ Blocks accidental commits containing API tokens, private keys, passwords, or cre
 brew install gitleaks
 ```
 
-## Install (Global Across macOS)
+## Install Options
+
+### 1. Global Across macOS (Default)
 
 ```bash
-./install.sh
+./install.sh --global
 ```
 
-This copies `pre-commit` and `gitleaks.toml` into `~/.config/git/hooks` and sets `git config --global core.hooksPath ~/.config/git/hooks`.
-Any existing repository-local `.git/hooks/pre-commit` script is still executed automatically after `gitleaks` passes.
+* Installs `pre-commit` and `gitleaks.toml` into `~/.config/git/hooks` and sets `git config --global core.hooksPath ~/.config/git/hooks`.
+* Automatically backs up any prior global `core.hooksPath` value before changing it.
+* Installs pass-through wrappers (`forward-hook`) for standard Git client hooks (`commit-msg`, `pre-push`, `post-checkout`, etc.) and uses `git rev-parse --git-common-dir` so both **repo-local hooks** and **Git worktrees** continue to work normally.
+
+### 2. Single Repository Only (`--local`)
+
+```bash
+./install.sh --local /path/to/repo
+```
+
+Copies `pre-commit` and `gitleaks.toml` into that repository's `.git/hooks/` directory without modifying global Git settings.
 
 ## Handling Intentional Test Fixtures / False Positives
 
@@ -26,7 +37,7 @@ Any existing repository-local `.git/hooks/pre-commit` script is still executed a
    SKIP_GITLEAKS=1 git commit -m "..."
    ```
 
-## Disable / Revert Global Hook
+## Disable / Restore Previous Global Hook
 
 ```bash
 ./install.sh --uninstall

@@ -30,13 +30,13 @@ else
   fi
 fi
 
-# Chain into repo-local .git/hooks/pre-commit if one exists
-GIT_DIR_PATH="$(git rev-parse --git-dir 2>/dev/null || true)"
-if [[ -n "${GIT_DIR_PATH}" ]]; then
-  LOCAL_HOOK="${GIT_DIR_PATH}/hooks/pre-commit"
-  SELF_REAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+# Chain into repo-local hooks/pre-commit (uses --git-common-dir so git worktrees resolve correctly)
+GIT_COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || git rev-parse --git-common-dir 2>/dev/null || true)"
+if [[ -n "${GIT_COMMON_DIR}" ]]; then
+  LOCAL_HOOK="${GIT_COMMON_DIR}/hooks/pre-commit"
+  SELF_REAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")"
   if [[ -f "${LOCAL_HOOK}" && -x "${LOCAL_HOOK}" ]]; then
-    LOCAL_REAL="$(cd "$(dirname "${LOCAL_HOOK}")" && pwd)/$(basename "${LOCAL_HOOK}")"
+    LOCAL_REAL="$(cd "$(dirname "${LOCAL_HOOK}")" && pwd -P)/$(basename "${LOCAL_HOOK}")"
     if [[ "${LOCAL_REAL}" != "${SELF_REAL}" ]]; then
       exec "${LOCAL_HOOK}" "$@"
     fi

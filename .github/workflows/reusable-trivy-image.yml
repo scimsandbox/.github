@@ -13,7 +13,7 @@ on:
         type: string
         default: "."
       dockerfile:
-        description: "Path to Dockerfile"
+        description: "Path to Dockerfile (base images must be publicly pullable)"
         required: false
         type: string
         default: "Dockerfile"
@@ -22,13 +22,32 @@ on:
         required: false
         type: boolean
         default: false
+      severity:
+        description: "Comma-separated Trivy severities to fail on"
+        required: false
+        type: string
+        default: "CRITICAL,HIGH"
+      trivyignores:
+        description: "Optional comma-separated path(s) to .trivyignore file(s)"
+        required: false
+        type: string
+        default: ""
       upload-sarif:
-        description: "Upload SARIF report to GitHub Code Scanning"
+        description: "Upload SARIF report to GitHub Code Scanning when supported"
         required: false
         type: boolean
         default: true
+      category:
+        description: "SARIF category identifier (override when scanning multiple images per repo)"
+        required: false
+        type: string
+        default: "trivy-image"
 
 permissions: {}
+
+concurrency:
+  group: trivy-image-${{ github.workflow }}-${{ inputs.category }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   trivy-image:
@@ -50,7 +69,7 @@ jobs:
         if: ${{ inputs.maven-github-packages }}
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           GITHUB_ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
@@ -66,7 +85,7 @@ jobs:
             </servers>
           </settings>
           EOF
-          : > "${RUNNER_TEMP}/maven-settings-security.xml"
+          printf '<settingsSecurity/>\n' > "${RUNNER_TEMP}/maven-settings-security.xml"
 
       - name: Build image for scanning
         if: ${{ !inputs.maven-github-packages }}
@@ -94,22 +113,31 @@ jobs:
           tags: ${{ inputs.image-name }}
 
       - name: Generate Trivy SARIF report
-        if: ${{ inputs.upload-sarif }}
+        id: sarif
+        if: >-
+          inputs.upload-sarif &&
+          !github.event.repository.private &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ inputs.image-name }}
           format: sarif
           output: trivy-image.sarif
-          severity: CRITICAL,HIGH
+          severity: ${{ inputs.severity }}
+          trivyignores: ${{ inputs.trivyignores }}
           ignore-unfixed: true
           vuln-type: os,library
 
       - name: Upload Trivy SARIF to GitHub Security
-        if: ${{ always() && inputs.upload-sarif && hashFiles('trivy-image.sarif') != '' }}
+        continue-on-error: true
+        if: >-
+          always() &&
+          steps.sarif.outcome == 'success' &&
+          hashFiles('trivy-image.sarif') != ''
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: trivy-image.sarif
-          category: trivy-image
+          category: ${{ inputs.category }}
 
       - name: Enforce Trivy vulnerability gate
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -117,6 +145,8 @@ jobs:
           image-ref: ${{ inputs.image-name }}
           format: table
           exit-code: "1"
-          severity: CRITICAL,HIGH
+          severity: ${{ inputs.severity }}
+          trivyignores: ${{ inputs.trivyignores }}
           ignore-unfixed: true
           vuln-type: os,library
+          skip-setup-trivy: ${{ steps.sarif.outcome == 'success' }}

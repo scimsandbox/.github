@@ -8,13 +8,32 @@ on:
         required: false
         type: string
         default: "."
+      severity:
+        description: "Comma-separated Trivy severities to fail on"
+        required: false
+        type: string
+        default: "CRITICAL,HIGH"
+      trivyignores:
+        description: "Optional comma-separated path(s) to .trivyignore file(s)"
+        required: false
+        type: string
+        default: ""
       upload-sarif:
-        description: "Upload SARIF report to GitHub Code Scanning"
+        description: "Upload SARIF report to GitHub Code Scanning when supported"
         required: false
         type: boolean
         default: true
+      category:
+        description: "SARIF category identifier (override when running multiple config scans per repo)"
+        required: false
+        type: string
+        default: "trivy-config"
 
 permissions: {}
+
+concurrency:
+  group: trivy-config-${{ github.workflow }}-${{ inputs.category }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   trivy-config:
@@ -29,21 +48,30 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Generate Trivy config SARIF report
-        if: ${{ inputs.upload-sarif }}
+        id: sarif
+        if: >-
+          inputs.upload-sarif &&
+          !github.event.repository.private &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: config
           scan-ref: ${{ inputs.scan-ref }}
           format: sarif
           output: trivy-config.sarif
-          severity: CRITICAL,HIGH
+          severity: ${{ inputs.severity }}
+          trivyignores: ${{ inputs.trivyignores }}
 
       - name: Upload Trivy config SARIF to GitHub Security
-        if: ${{ always() && inputs.upload-sarif && hashFiles('trivy-config.sarif') != '' }}
+        continue-on-error: true
+        if: >-
+          always() &&
+          steps.sarif.outcome == 'success' &&
+          hashFiles('trivy-config.sarif') != ''
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: trivy-config.sarif
-          category: trivy-config
+          category: ${{ inputs.category }}
 
       - name: Enforce Trivy config gate
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -52,4 +80,6 @@ jobs:
           scan-ref: ${{ inputs.scan-ref }}
           format: table
           exit-code: "1"
-          severity: CRITICAL,HIGH
+          severity: ${{ inputs.severity }}
+          trivyignores: ${{ inputs.trivyignores }}
+          skip-setup-trivy: ${{ steps.sarif.outcome == 'success' }}
