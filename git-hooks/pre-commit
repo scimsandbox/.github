@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# scimsandbox-gitleaks-pre-commit
+set -euo pipefail
+
+# Ensure Homebrew binaries are available when committing from GUI Git clients (IDEs, etc.)
+export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}"
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+SELF_REAL="${HOOK_DIR}/$(basename "${BASH_SOURCE[0]}")"
+
+if [[ "${SKIP_GITLEAKS:-0}" == "1" ]]; then
+  echo "[gitleaks] SKIP_GITLEAKS=1 set — skipping staged secret scan." >&2
+elif [[ "${SCIMSANDBOX_GITLEAKS_RAN:-0}" != "1" ]]; then
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "[gitleaks] ERROR: 'gitleaks' is not installed (run: brew install gitleaks, or bypass once with SKIP_GITLEAKS=1)." >&2
+    exit 1
+  fi
+
+  REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+  CONFIG_ARGS=()
+  if [[ -f "${REPO_ROOT}/.gitleaks.toml" ]]; then
+    CONFIG_ARGS=(--config "${REPO_ROOT}/.gitleaks.toml")
+  elif [[ -f "${HOOK_DIR}/gitleaks.toml" ]]; then
+    CONFIG_ARGS=(--config "${HOOK_DIR}/gitleaks.toml")
+  fi
+
+  if ! gitleaks git --pre-commit --staged --redact=100 --verbose --log-level=warn --no-banner "${CONFIG_ARGS[@]}" "${REPO_ROOT}"; then
+    echo "" >&2
+    echo "[gitleaks] Commit blocked: potential secret detected in staged changes." >&2
+    echo "[gitleaks] If this is an intentional dummy value, add '# gitleaks:allow' inline, configure .gitleaks.toml, or run SKIP_GITLEAKS=1 git commit." >&2
+    exit 1
+  fi
+  export SCIMSANDBOX_GITLEAKS_RAN=1
+fi
+
+run_chained_hook() {
+  local candidate="$1"
+  shift
+  if [[ -f "${candidate}" && -x "${candidate}" ]]; then
+    local candidate_real
+    candidate_real="$(cd "$(dirname "${candidate}")" && pwd -P)/$(basename "${candidate}")"
+    if [[ "${candidate_real}" != "${SELF_REAL}" ]]; then
+      "${candidate}" "$@"
+    fi
+  fi
+}
+
+# 1. Chain into backed-up previous global core.hooksPath/pre-commit if present
+if [[ -f "${HOOK_DIR}/.previous-hooks-path" ]]; then
+  PREV_DIR="$(cat "${HOOK_DIR}/.previous-hooks-path")"
+  PREV_DIR="${PREV_DIR/#\~/${HOME}}"
+  run_chained_hook "${PREV_DIR}/pre-commit" "$@"
+fi
+
+# 2. Chain into backed-up repo-local hook created by 'install.sh --local'
+run_chained_hook "${HOOK_DIR}/pre-commit.pre-gitleaks" "$@"
+
+# 3. Chain into repo-local hooks/pre-commit (uses --git-common-dir so git worktrees resolve correctly)
+GIT_COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || git rev-parse --git-common-dir 2>/dev/null || true)"
+if [[ -n "${GIT_COMMON_DIR}" ]]; then
+  run_chained_hook "${GIT_COMMON_DIR}/hooks/pre-commit" "$@"
+fi

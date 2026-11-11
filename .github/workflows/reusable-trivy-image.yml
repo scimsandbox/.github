@@ -1,0 +1,152 @@
+name: Reusable Trivy Image Scan
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: "Local image tag to build and scan"
+        required: true
+        type: string
+      context:
+        description: "Docker build context"
+        required: false
+        type: string
+        default: "."
+      dockerfile:
+        description: "Path to Dockerfile (base images must be publicly pullable)"
+        required: false
+        type: string
+        default: "Dockerfile"
+      maven-github-packages:
+        description: "Mount Maven settings for GitHub Packages during Docker build"
+        required: false
+        type: boolean
+        default: false
+      severity:
+        description: "Comma-separated Trivy severities to report and enforce"
+        required: false
+        type: string
+        default: "CRITICAL,HIGH"
+      trivyignores:
+        description: "Optional comma-separated path(s) to .trivyignore file(s)"
+        required: false
+        type: string
+        default: ""
+      upload-sarif:
+        description: "Upload SARIF report to GitHub Code Scanning when supported"
+        required: false
+        type: boolean
+        default: true
+      category:
+        description: "SARIF category identifier (override when scanning multiple images per repo)"
+        required: false
+        type: string
+        default: "trivy-image"
+
+permissions: {}
+
+concurrency:
+  group: trivy-image-${{ github.workflow }}-${{ inputs.category }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  trivy-image:
+    name: Trivy container scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Prepare Maven auth files
+        if: ${{ inputs.maven-github-packages }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+
+          cat > "${RUNNER_TEMP}/maven-settings.xml" <<EOF
+          <settings>
+            <servers>
+              <server>
+                <id>github</id>
+                <username>${GITHUB_ACTOR}</username>
+                <password>${GITHUB_TOKEN}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+          printf '<settingsSecurity/>\n' > "${RUNNER_TEMP}/maven-settings-security.xml"
+
+      - name: Build image for scanning
+        if: ${{ !inputs.maven-github-packages }}
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ inputs.image-name }}
+
+      - name: Build image for scanning (with Maven GitHub Packages)
+        if: ${{ inputs.maven-github-packages }}
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          secret-files: |
+            maven_settings=${{ runner.temp }}/maven-settings.xml
+            maven_security=${{ runner.temp }}/maven-settings-security.xml
+          tags: ${{ inputs.image-name }}
+
+      - name: Generate Trivy SARIF report
+        id: sarif
+        if: >-
+          inputs.upload-sarif &&
+          !github.event.repository.private &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ inputs.image-name }}
+          format: sarif
+          output: trivy-image.sarif
+          severity: ${{ inputs.severity }}
+          trivyignores: ${{ inputs.trivyignores }}
+          ignore-unfixed: true
+          vuln-type: os,library
+
+      - name: Upload Trivy SARIF to GitHub Security
+        continue-on-error: true
+        if: >-
+          always() &&
+          steps.sarif.outcome == 'success' &&
+          hashFiles('trivy-image.sarif') != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: trivy-image.sarif
+          category: ${{ inputs.category }}
+
+      - name: Enforce Trivy vulnerability gate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ inputs.image-name }}
+          format: table
+          exit-code: "1"
+          severity: ${{ inputs.severity }}
+          trivyignores: ${{ inputs.trivyignores }}
+          ignore-unfixed: true
+          vuln-type: os,library
+          skip-setup-trivy: ${{ steps.sarif.outcome == 'success' }}

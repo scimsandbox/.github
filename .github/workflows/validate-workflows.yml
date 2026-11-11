@@ -1,0 +1,53 @@
+name: Validate Reusable Workflows
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions: {}
+
+concurrency:
+  group: validate-workflows-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  actionlint:
+    name: Lint GitHub Actions workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Download and verify actionlint
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTIONLINT_VERSION: "1.7.12"
+        run: |
+          set -euo pipefail
+
+          gh release download "v${ACTIONLINT_VERSION}" \
+            --repo rhysd/actionlint \
+            --pattern "actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            --pattern "actionlint_${ACTIONLINT_VERSION}_checksums.txt" \
+            --dir "${RUNNER_TEMP}"
+
+          (
+            cd "${RUNNER_TEMP}"
+            grep "actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz$" "actionlint_${ACTIONLINT_VERSION}_checksums.txt" | sha256sum -c -
+            tar -xzf "actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" actionlint
+          )
+
+      - name: Run actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          "${RUNNER_TEMP}/actionlint" -color
