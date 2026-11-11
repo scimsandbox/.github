@@ -9,9 +9,10 @@ Shared GitHub Actions `workflow_call` definitions consumed across `scimsandbox` 
 
 ## Ref Pinning & Governance Policy
 
-* Callers in `scimsandbox` reference `@main` (or an immutable 40-char commit SHA where strict immutability is desired).
-* Because changes merged to `main` in `scimsandbox/.github` immediately affect `@main` consumers:
-  * Keep `main` branch-protected with the `Lint GitHub Actions workflows` (`actionlint`) check required (runs unconditionally on every PR to `main` so documentation-only PRs never deadlock).
+* Pin reusable workflow references in `scimsandbox` callers to the immutable 40-character commit SHA of a SemVer tag on `scimsandbox/.github` with a `# vX.Y.Z` trailing comment (for example, `uses: scimsandbox/.github/.github/workflows/reusable-trivy-image.yml@<tag-commit-sha> # v1.0.0`).
+* **Dependabot requirement:** Dependabot's `github-actions` updater requires SemVer tags (`vX.Y.Z`) on `scimsandbox/.github` to detect and propose updates to SHA-pinned callers (delivered on each consumer repository's weekly Dependabot schedule). Pinning to an untagged commit SHA (even with `# main`) is **not** updated by Dependabot and remains frozen until bumped manually or until SemVer tags are published on `scimsandbox/.github`.
+* Governance safeguards on `scimsandbox/.github`:
+  * `validate-workflows.yml` runs `Lint GitHub Actions workflows` (`actionlint`) unconditionally on every PR to `main` (so documentation-only PRs never deadlock when required). Add `Lint GitHub Actions workflows` as a required status check in the `Require PR for default branch` ruleset (`Settings → Rules → Rulesets`) to enforce it before merge.
   * `.github/CODEOWNERS` assigns review ownership to `@edipal`.
 
 ---
@@ -44,7 +45,7 @@ permissions:
 
 jobs:
   security-pr:
-    uses: scimsandbox/.github/.github/workflows/reusable-security-pr.yml@main
+    uses: scimsandbox/.github/.github/workflows/reusable-security-pr.yml@<tag-commit-sha> # v1.0.0
     with:
       dependency-review: true # set false for repos without lockfiles/manifests
 ```
@@ -55,6 +56,7 @@ jobs:
 
 * **Supported triggers:** `pull_request`, `push`, `schedule`, `release`, `workflow_dispatch`.
 * **Base image requirement:** Base images in `Dockerfile` must be publicly pullable (such as Docker Hub / `dhi.io` public images or `gcr.io/distroless`). Private container base images require authenticating in a custom workflow instead.
+* **`.dockerignore` hygiene:** Consumer repositories should include a `.dockerignore` excluding `.git`, `.github`, and local build/test artifacts so Docker build contexts stay lean and avoid copying repository metadata into image layers.
 * **SARIF upload behavior:** Runs on public non-fork runs (`!github.event.repository.private` and same-repo PRs) with `continue-on-error: true`. On fork PRs or private repos, SARIF generation/upload is skipped while the `exit-code: "1"` table step **always** enforces the vulnerability gate.
 * **Multi-image repositories:** Override `category` (e.g., `trivy-image-api`, `trivy-image-worker`) so SARIF uploads do not overwrite each other.
 
@@ -80,7 +82,7 @@ permissions:
 
 jobs:
   trivy:
-    uses: scimsandbox/.github/.github/workflows/reusable-trivy-image.yml@main
+    uses: scimsandbox/.github/.github/workflows/reusable-trivy-image.yml@<tag-commit-sha> # v1.0.0
     with:
       image-name: my-service:scan
       maven-github-packages: false # set true if Dockerfile mounts GitHub Packages Maven secrets
@@ -112,7 +114,7 @@ permissions:
 
 jobs:
   trivy-config:
-    uses: scimsandbox/.github/.github/workflows/reusable-trivy-config.yml@main
+    uses: scimsandbox/.github/.github/workflows/reusable-trivy-config.yml@<tag-commit-sha> # v1.0.0
     with:
       scan-ref: "."
       severity: "CRITICAL,HIGH"
@@ -144,12 +146,18 @@ permissions:
 
 jobs:
   automerge:
-    uses: scimsandbox/.github/.github/workflows/reusable-dependabot-automerge.yml@main
+    uses: scimsandbox/.github/.github/workflows/reusable-dependabot-automerge.yml@<tag-commit-sha> # v1.0.0
 ```
 
 ---
 
 ## Maintenance Notes
 
+* **Releasing reusable workflow updates:** After merging changes to `main`, publish an annotated SemVer tag so consumer repositories using SHA-pinned refs receive weekly Dependabot update PRs:
+  ```bash
+  git checkout main && git pull --ff-only
+  git tag -a vX.Y.Z -m "Release vX.Y.Z"
+  git push origin vX.Y.Z
+  ```
 * **GitHub Actions SHAs:** Automatically updated weekly via [`.github/dependabot.yml`](../dependabot.yml).
 * **Pinned CLI binaries:** `GITLEAKS_VERSION` (in `reusable-security-pr.yml`) and `ACTIONLINT_VERSION` (in `validate-workflows.yml`) are verified via release `checksums.txt` and bumped manually when upgrading major/minor tool versions.
