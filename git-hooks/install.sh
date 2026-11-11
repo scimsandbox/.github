@@ -12,6 +12,7 @@ FORWARDED_HOOKS=(
   prepare-commit-msg
   commit-msg
   post-commit
+  pre-merge-commit
   pre-rebase
   post-checkout
   post-merge
@@ -26,9 +27,10 @@ Usage: $(basename "$0") [--global | --local [repo-path] | --uninstall]
 
 Options:
   --global             Install gitleaks pre-commit hook globally in ${GLOBAL_HOOKS_DIR} (default),
-                       preserving previous core.hooksPath and forwarding all other repo-local hooks.
-  --local [repo-path]  Install only into a single repository's hooks directory (defaults to current dir).
-  --uninstall          Restore previous global core.hooksPath (or unset if none existed).
+                       chaining into any previous global core.hooksPath and repo-local hooks.
+  --local [repo-path]  Install only into a single repository's hooks directory (defaults to current dir),
+                       backing up and chaining any existing pre-commit hook as pre-commit.pre-gitleaks.
+  --uninstall          Restore previous global core.hooksPath (or unset if none existed; leaves files in ${GLOBAL_HOOKS_DIR}).
 EOF
 }
 
@@ -58,22 +60,32 @@ case "${MODE}" in
     ;;
   --local)
     TARGET_REPO="${2:-.}"
-    COMMON_DIR="$(git -C "${TARGET_REPO}" rev-parse --path-format=absolute --git-common-dir)"
-    mkdir -p "${COMMON_DIR}/hooks"
-    cp "${SCRIPT_DIR}/pre-commit" "${COMMON_DIR}/hooks/pre-commit"
-    cp "${SCRIPT_DIR}/gitleaks.toml" "${COMMON_DIR}/hooks/gitleaks.toml"
-    chmod +x "${COMMON_DIR}/hooks/pre-commit"
-    echo "Installed repo-local gitleaks pre-commit hook at ${COMMON_DIR}/hooks/pre-commit"
+    if ! COMMON_DIR="$(git -C "${TARGET_REPO}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
+      RAW_COMMON_DIR="$(git -C "${TARGET_REPO}" rev-parse --git-common-dir)"
+      COMMON_DIR="$(cd "${TARGET_REPO}" && cd "${RAW_COMMON_DIR}" && pwd -P)"
+    fi
+    HOOKS_TARGET="${COMMON_DIR}/hooks"
+    mkdir -p "${HOOKS_TARGET}"
+
+    if [[ -f "${HOOKS_TARGET}/pre-commit" ]] && ! grep -q '^# scimsandbox-gitleaks-pre-commit$' "${HOOKS_TARGET}/pre-commit" 2>/dev/null; then
+      cp -p "${HOOKS_TARGET}/pre-commit" "${HOOKS_TARGET}/pre-commit.pre-gitleaks"
+      echo "Backed up existing repo pre-commit hook to ${HOOKS_TARGET}/pre-commit.pre-gitleaks"
+    fi
+
+    cp "${SCRIPT_DIR}/pre-commit" "${HOOKS_TARGET}/pre-commit"
+    cp "${SCRIPT_DIR}/gitleaks.toml" "${HOOKS_TARGET}/gitleaks.toml"
+    chmod +x "${HOOKS_TARGET}/pre-commit"
+    echo "Installed repo-local gitleaks pre-commit hook at ${HOOKS_TARGET}/pre-commit"
     ;;
   --uninstall)
     if [[ -f "${BACKUP_FILE}" ]]; then
       PREV_PATH="$(cat "${BACKUP_FILE}")"
       git config --global core.hooksPath "${PREV_PATH}"
       rm -f "${BACKUP_FILE}"
-      echo "Restored previous global core.hooksPath: ${PREV_PATH}"
+      echo "Restored previous global core.hooksPath: ${PREV_PATH} (files left intact in ${GLOBAL_HOOKS_DIR})"
     else
       git config --global --unset core.hooksPath || true
-      echo "Unset global core.hooksPath"
+      echo "Unset global core.hooksPath (files left intact in ${GLOBAL_HOOKS_DIR})"
     fi
     ;;
   -h|--help)

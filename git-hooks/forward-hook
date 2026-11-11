@@ -1,17 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Pass-through wrapper so global core.hooksPath preserves repo-local hooks (commit-msg, pre-push, etc.)
+# Pass-through wrapper so global core.hooksPath preserves both previous global hooks and repo-local hooks
 HOOK_NAME="$(basename "$0")"
-GIT_COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || git rev-parse --git-common-dir 2>/dev/null || true)"
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+SELF_REAL="${HOOK_DIR}/${HOOK_NAME}"
 
-if [[ -n "${GIT_COMMON_DIR}" ]]; then
-  LOCAL_HOOK="${GIT_COMMON_DIR}/hooks/${HOOK_NAME}"
-  SELF_REAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/${HOOK_NAME}"
-  if [[ -f "${LOCAL_HOOK}" && -x "${LOCAL_HOOK}" ]]; then
-    LOCAL_REAL="$(cd "$(dirname "${LOCAL_HOOK}")" && pwd -P)/${HOOK_NAME}"
-    if [[ "${LOCAL_REAL}" != "${SELF_REAL}" ]]; then
-      exec "${LOCAL_HOOK}" "$@"
+run_chained_hook() {
+  local candidate="$1"
+  shift
+  if [[ -f "${candidate}" && -x "${candidate}" ]]; then
+    local candidate_real
+    candidate_real="$(cd "$(dirname "${candidate}")" && pwd -P)/$(basename "${candidate}")"
+    if [[ "${candidate_real}" != "${SELF_REAL}" ]]; then
+      "${candidate}" "$@"
     fi
   fi
+}
+
+# 1. Forward to previous global core.hooksPath if one was backed up on install
+if [[ -f "${HOOK_DIR}/.previous-hooks-path" ]]; then
+  PREV_DIR="$(cat "${HOOK_DIR}/.previous-hooks-path")"
+  PREV_DIR="${PREV_DIR/#\~/${HOME}}"
+  run_chained_hook "${PREV_DIR}/${HOOK_NAME}" "$@"
+fi
+
+# 2. Forward to repository-local hook (worktree-aware via --git-common-dir)
+GIT_COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || git rev-parse --git-common-dir 2>/dev/null || true)"
+if [[ -n "${GIT_COMMON_DIR}" ]]; then
+  run_chained_hook "${GIT_COMMON_DIR}/hooks/${HOOK_NAME}" "$@"
 fi

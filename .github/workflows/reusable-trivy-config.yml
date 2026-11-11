@@ -9,7 +9,7 @@ on:
         type: string
         default: "."
       severity:
-        description: "Comma-separated Trivy severities to fail on"
+        description: "Comma-separated Trivy severities to report and enforce"
         required: false
         type: string
         default: "CRITICAL,HIGH"

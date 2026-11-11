@@ -11,7 +11,7 @@ Shared GitHub Actions `workflow_call` definitions consumed across `scimsandbox` 
 
 * Callers in `scimsandbox` reference `@main` (or an immutable 40-char commit SHA where strict immutability is desired).
 * Because changes merged to `main` in `scimsandbox/.github` immediately affect `@main` consumers:
-  * Keep `main` branch-protected with the `Lint GitHub Actions workflows` (`actionlint`) check required.
+  * Keep `main` branch-protected with the `Lint GitHub Actions workflows` (`actionlint`) check required (runs unconditionally on every PR to `main` so documentation-only PRs never deadlock).
   * `.github/CODEOWNERS` assigns review ownership to `@edipal`.
 
 ---
@@ -19,9 +19,9 @@ Shared GitHub Actions `workflow_call` definitions consumed across `scimsandbox` 
 ## 1. `reusable-security-pr.yml` (Secret Scan + Dependency & License Review)
 
 * **Supported triggers:** `pull_request`, `push`, `schedule`, `workflow_dispatch` *(do **not** use `pull_request_target`)*.
-* **Private repo & fork behavior:**
-  * `secret-scan` (Gitleaks) runs on all repos (public & private) and scans full commit ranges (`base..head` on PRs, `before..after` on pushes, `--all` on schedule/dispatch).
-  * `dependency-review` automatically skips on private repositories unless GHAS is enabled, and runs on all public repository `pull_request` events.
+* **Public vs. private repo behavior:**
+  * `secret-scan` (Gitleaks) runs on all repositories (public and private) and scans full commit ranges (`base..head` on PRs, `before..after` on pushes, `--all` on schedule/dispatch).
+  * `dependency-review` runs on public repository `pull_request` events and skips automatically when `github.event.repository.private` is `true` (for private repos such as `scim-website` without paid GitHub Code Security).
 
 ### Canonical Caller (`.github/workflows/security-pr.yml`)
 
@@ -32,6 +32,11 @@ on:
   pull_request:
     branches:
       - main
+  # Optional additional triggers (secret-scan runs on all; dependency-review runs on pull_request):
+  # push:
+  #   branches:
+  #     - main
+  # workflow_dispatch:
 
 permissions:
   contents: read
@@ -50,7 +55,7 @@ jobs:
 
 * **Supported triggers:** `pull_request`, `push`, `schedule`, `release`, `workflow_dispatch`.
 * **Base image requirement:** Base images in `Dockerfile` must be publicly pullable (such as Docker Hub / `dhi.io` public images or `gcr.io/distroless`). Private container base images require authenticating in a custom workflow instead.
-* **SARIF upload behavior:** Automatically skipped on fork PRs (where `security-events: write` is read-only) and private repos without Code Scanning, with `continue-on-error: true`. The `exit-code: "1"` table step **always** enforces the vulnerability gate regardless of SARIF upload status.
+* **SARIF upload behavior:** Runs on public non-fork runs (`!github.event.repository.private` and same-repo PRs) with `continue-on-error: true`. On fork PRs or private repos, SARIF upload is skipped while the `exit-code: "1"` table step **always** enforces the vulnerability gate.
 * **Multi-image repositories:** Override `category` (e.g., `trivy-image-api`, `trivy-image-worker`) so SARIF uploads do not overwrite each other.
 
 ### Canonical Caller (`.github/workflows/trivy.yml`)
