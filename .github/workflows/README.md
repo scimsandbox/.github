@@ -9,8 +9,9 @@ Shared GitHub Actions `workflow_call` definitions consumed across `scimsandbox` 
 
 ## Ref Pinning & Governance Policy
 
-* Callers in `scimsandbox` reference `@main` (or an immutable 40-char commit SHA where strict immutability is desired).
-* Because changes merged to `main` in `scimsandbox/.github` immediately affect `@main` consumers:
+* Pin reusable workflow references in `scimsandbox` callers to an immutable 40-character commit SHA from `main` with a `# main` trailing comment (for example, `uses: scimsandbox/.github/.github/workflows/reusable-trivy-image.yml@<commit-sha> # main`).
+* Dependabot's `github-actions` updater automatically bumps SHA-pinned reusable workflow references whenever new commits land on `main` (ensure each consumer repository configures the `github-actions` ecosystem in `.github/dependabot.yml`).
+* Governance safeguards on `scimsandbox/.github`:
   * Keep `main` branch-protected with the `Lint GitHub Actions workflows` (`actionlint`) check required (runs unconditionally on every PR to `main` so documentation-only PRs never deadlock).
   * `.github/CODEOWNERS` assigns review ownership to `@edipal`.
 
@@ -44,7 +45,7 @@ permissions:
 
 jobs:
   security-pr:
-    uses: scimsandbox/.github/.github/workflows/reusable-security-pr.yml@main
+    uses: scimsandbox/.github/.github/workflows/reusable-security-pr.yml@<commit-sha> # main
     with:
       dependency-review: true # set false for repos without lockfiles/manifests
 ```
@@ -80,7 +81,7 @@ permissions:
 
 jobs:
   trivy:
-    uses: scimsandbox/.github/.github/workflows/reusable-trivy-image.yml@main
+    uses: scimsandbox/.github/.github/workflows/reusable-trivy-image.yml@<commit-sha> # main
     with:
       image-name: my-service:scan
       maven-github-packages: false # set true if Dockerfile mounts GitHub Packages Maven secrets
@@ -112,7 +113,7 @@ permissions:
 
 jobs:
   trivy-config:
-    uses: scimsandbox/.github/.github/workflows/reusable-trivy-config.yml@main
+    uses: scimsandbox/.github/.github/workflows/reusable-trivy-config.yml@<commit-sha> # main
     with:
       scan-ref: "."
       severity: "CRITICAL,HIGH"
@@ -144,7 +145,7 @@ permissions:
 
 jobs:
   automerge:
-    uses: scimsandbox/.github/.github/workflows/reusable-dependabot-automerge.yml@main
+    uses: scimsandbox/.github/.github/workflows/reusable-dependabot-automerge.yml@<commit-sha> # main
 ```
 
 ---
