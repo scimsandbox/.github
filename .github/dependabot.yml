@@ -7,6 +7,7 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "Europe/Berlin"
+    # Explicit 3-day soak period for routine action updates (matches platform default)
     cooldown:
       default-days: 3
     groups:
