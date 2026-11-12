@@ -45,9 +45,10 @@ permissions:
 
 jobs:
   security-pr:
-    uses: scimsandbox/.github/.github/workflows/reusable-security-pr.yml@<tag-commit-sha> # v1.0.0
+    uses: scimsandbox/.github/.github/workflows/reusable-security-pr.yml@<tag-commit-sha> # v1.1.0
     with:
       dependency-review: true # set false for repos without lockfiles/manifests
+      # allow-ghsas: "GHSA-xxxx-xxxx-xxxx" # optional comma-separated GHSA IDs matching documented .trivyignore exceptions
 ```
 
 ---
