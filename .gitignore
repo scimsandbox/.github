@@ -1,2 +1,14 @@
+# macOS
 .DS_Store
+**/.DS_Store
+._*
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local scratch files
+*.tmp
 java-upgrade/

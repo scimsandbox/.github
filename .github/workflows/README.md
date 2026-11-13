@@ -12,7 +12,7 @@ Shared GitHub Actions `workflow_call` definitions consumed across `scimsandbox` 
 * Pin reusable workflow references in `scimsandbox` callers to the immutable 40-character commit SHA of a SemVer tag on `scimsandbox/.github` with a `# vX.Y.Z` trailing comment (for example, `uses: scimsandbox/.github/.github/workflows/reusable-trivy-image.yml@<tag-commit-sha> # v1.0.0`).
 * **Dependabot requirement:** Dependabot's `github-actions` updater requires SemVer tags (`vX.Y.Z`) on `scimsandbox/.github` to detect and propose updates to SHA-pinned callers (delivered on each consumer repository's weekly Dependabot schedule). Pinning to an untagged commit SHA (even with `# main`) is **not** updated by Dependabot and remains frozen until bumped manually or until SemVer tags are published on `scimsandbox/.github`.
 * Governance safeguards on `scimsandbox/.github`:
-  * `validate-workflows.yml` runs `Lint GitHub Actions workflows` (`actionlint`) unconditionally on every PR to `main` (so documentation-only PRs never deadlock when required). Add `Lint GitHub Actions workflows` as a required status check in the `Require PR for default branch` ruleset (`Settings → Rules → Rulesets`) to enforce it before merge.
+  * `validate-workflows.yml` runs `Lint GitHub Actions workflows` (YAML syntax/structure validation, `bash -n` script checks, and `actionlint`) plus `Secret scan (Gitleaks)` unconditionally on every PR to `main` (so documentation-only PRs never deadlock when required). Add `Lint GitHub Actions workflows` as a required status check in the `Require PR for default branch` ruleset (`Settings → Rules → Rulesets`) to enforce it before merge.
   * `.github/CODEOWNERS` assigns review ownership to `@edipal`.
 
 ---
@@ -20,6 +20,7 @@ Shared GitHub Actions `workflow_call` definitions consumed across `scimsandbox` 
 ## 1. `reusable-security-pr.yml` (Secret Scan + Dependency & License Review)
 
 * **Supported triggers:** `pull_request`, `push`, `schedule`, `workflow_dispatch` *(do **not** use `pull_request_target`)*.
+* **Custom `.gitleaks.toml` safety:** If a caller repository includes a `.gitleaks.toml`, `secret-scan` verifies that `[extend]` sets `useDefault = true` before running Gitleaks and fails closed if omitted, preventing accidental wipeout of Gitleaks' built-in rule pack. Protect `.gitleaks.toml` and `.trivyignore` via `.github/CODEOWNERS` in consumer repositories.
 * **Public vs. private repo behavior:**
   * `secret-scan` (Gitleaks) runs on all repositories (public and private) and scans full commit ranges (`base..head` on PRs, `before..after` on pushes, `--all` on schedule/dispatch).
   * `dependency-review` runs on public repository `pull_request` events (`!github.event.repository.private`) and skips automatically on private repositories (such as `scim-website`).
@@ -45,7 +46,7 @@ permissions:
 
 jobs:
   security-pr:
-    uses: scimsandbox/.github/.github/workflows/reusable-security-pr.yml@<tag-commit-sha> # v1.1.0
+    uses: scimsandbox/.github/.github/workflows/reusable-security-pr.yml@<tag-commit-sha> # v1.1.1
     with:
       dependency-review: true # set false for repos without lockfiles/manifests
       # allow-ghsas: "GHSA-xxxx-xxxx-xxxx" # optional comma-separated GHSA IDs matching documented .trivyignore exceptions
@@ -83,7 +84,7 @@ permissions:
 
 jobs:
   trivy:
-    uses: scimsandbox/.github/.github/workflows/reusable-trivy-image.yml@<tag-commit-sha> # v1.0.0
+    uses: scimsandbox/.github/.github/workflows/reusable-trivy-image.yml@<tag-commit-sha> # v1.1.1
     with:
       image-name: my-service:scan
       maven-github-packages: false # set true if Dockerfile mounts GitHub Packages Maven secrets
@@ -115,7 +116,7 @@ permissions:
 
 jobs:
   trivy-config:
-    uses: scimsandbox/.github/.github/workflows/reusable-trivy-config.yml@<tag-commit-sha> # v1.0.0
+    uses: scimsandbox/.github/.github/workflows/reusable-trivy-config.yml@<tag-commit-sha> # v1.1.1
     with:
       scan-ref: "."
       severity: "CRITICAL,HIGH"
@@ -129,7 +130,7 @@ jobs:
 * **Organization & Repository Prerequisites (Required!):**
   1. **Org / Repo Actions setting:** *"Allow GitHub Actions to create and approve pull requests"* must be **enabled** (`Settings → Actions → General → Workflow permissions`).
   2. **Repo Pull Request settings:** *"Allow auto-merge"* and *"Allow squash merging"* must be **enabled** (`Settings → General → Pull Requests`).
-  3. **Branch protection / Rulesets:** Require CI status checks (`Build and test`, etc.) to pass before merging so GitHub waits for green checks before completing the auto-merge. **Do not** enable *"Require review from Code Owners"* on branches where you want `github-actions[bot]` approval alone to satisfy merge requirements.
+  3. **Branch protection / Rulesets:** Require CI status checks (`Build and test`, etc.) to pass before merging so GitHub waits for green checks before completing the auto-merge, and enable *"Dismiss stale pull request approvals when new commits are pushed"* alongside `--match-head-commit` TOCTOU protection. **Do not** enable *"Require review from Code Owners"* on branches where you want `github-actions[bot]` approval alone to satisfy merge requirements.
 
 ### Canonical Caller (`.github/workflows/dependabot-auto-merge.yml`)
 
@@ -147,7 +148,7 @@ permissions:
 
 jobs:
   automerge:
-    uses: scimsandbox/.github/.github/workflows/reusable-dependabot-automerge.yml@<tag-commit-sha> # v1.0.0
+    uses: scimsandbox/.github/.github/workflows/reusable-dependabot-automerge.yml@<tag-commit-sha> # v1.1.1
 ```
 
 ---

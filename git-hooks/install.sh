@@ -51,7 +51,8 @@ case "${MODE}" in
     mkdir -p "${GLOBAL_HOOKS_DIR}"
 
     EXISTING_PATH="$(git config --global --get core.hooksPath || true)"
-    if [[ -n "${EXISTING_PATH}" && "${EXISTING_PATH}" != "${GLOBAL_HOOKS_DIR}" && ! -f "${BACKUP_FILE}" ]]; then
+    EXPANDED_EXISTING_PATH="${EXISTING_PATH/#\~/${HOME}}"
+    if [[ -n "${EXISTING_PATH}" && "${EXPANDED_EXISTING_PATH}" != "${GLOBAL_HOOKS_DIR}" && ! -f "${BACKUP_FILE}" ]]; then
       printf '%s\n' "${EXISTING_PATH}" > "${BACKUP_FILE}"
       echo "Backed up previous core.hooksPath (${EXISTING_PATH}) to ${BACKUP_FILE}"
     fi
