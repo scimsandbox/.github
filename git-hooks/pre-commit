@@ -20,6 +20,32 @@ elif [[ "${SCIMSANDBOX_GITLEAKS_RAN:-0}" != "1" ]]; then
 
   CONFIG_ARGS=()
   if [[ -f "${REPO_ROOT}/.gitleaks.toml" ]]; then
+    if ! awk '
+      {
+        line = $0
+        sub(/#.*/, "", line)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+        if (line == "") next
+        if (line ~ /^\[.*\]$/) {
+          sec = line
+          gsub(/^\[[[:space:]]*|[[:space:]]*\]$/, "", sec)
+          next
+        }
+        if (sec == "extend" && line ~ /^useDefault[[:space:]]*=/) {
+          val = line
+          sub(/^useDefault[[:space:]]*=[[:space:]]*/, "", val)
+          ok = (val == "true")
+        } else if (sec == "" && line ~ /^extend\.useDefault[[:space:]]*=/) {
+          val = line
+          sub(/^extend\.useDefault[[:space:]]*=[[:space:]]*/, "", val)
+          ok = (val == "true")
+        }
+      }
+      END { exit(ok ? 0 : 1) }
+    ' "${REPO_ROOT}/.gitleaks.toml"; then
+      echo "[gitleaks] ERROR: ${REPO_ROOT}/.gitleaks.toml must include '[extend]' with 'useDefault = true' so built-in secret rules are not disabled." >&2
+      exit 1
+    fi
     CONFIG_ARGS=(--config "${REPO_ROOT}/.gitleaks.toml")
   elif [[ -f "${HOOK_DIR}/gitleaks.toml" ]]; then
     CONFIG_ARGS=(--config "${HOOK_DIR}/gitleaks.toml")
