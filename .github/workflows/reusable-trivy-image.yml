@@ -76,7 +76,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          cat > "${RUNNER_TEMP}/maven-settings.xml" <<EOF
+          rm -f "${RUNNER_TEMP}/maven-settings.xml" "${RUNNER_TEMP}/maven-settings-security.xml"
+          (
+            umask 077 &&
+            cat > "${RUNNER_TEMP}/maven-settings.xml" <<EOF &&
           <settings>
             <servers>
               <server>
@@ -87,7 +90,8 @@ jobs:
             </servers>
           </settings>
           EOF
-          printf '<settingsSecurity/>\n' > "${RUNNER_TEMP}/maven-settings-security.xml"
+            printf '<settingsSecurity/>\n' > "${RUNNER_TEMP}/maven-settings-security.xml"
+          )
 
       - name: Build image for scanning
         if: ${{ !inputs.maven-github-packages }}
@@ -113,6 +117,14 @@ jobs:
             maven_settings=${{ runner.temp }}/maven-settings.xml
             maven_security=${{ runner.temp }}/maven-settings-security.xml
           tags: ${{ inputs.image-name }}
+
+      - name: Clean up temporary Maven auth files
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -f "${RUNNER_TEMP}/maven-settings.xml" "${RUNNER_TEMP}/maven-settings-security.xml"
 
       - name: Generate Trivy SARIF report
         id: sarif

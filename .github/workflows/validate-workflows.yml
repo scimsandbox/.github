@@ -27,6 +27,111 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Validate YAML syntax, workflow structure, and shell safety
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import glob
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+
+          def load_yaml(path):
+              try:
+                  import yaml
+                  with open(path, "r", encoding="utf-8") as handle:
+                      return yaml.safe_load(handle)
+              except ModuleNotFoundError:
+                  out = subprocess.check_output(
+                      [
+                          "ruby",
+                          "-ryaml",
+                          "-rjson",
+                          "-rdate",
+                          "-e",
+                          "puts JSON.generate(YAML.safe_load(File.read(ARGV[0]), permitted_classes: [Date, Time]))",
+                          path,
+                      ],
+                      text=True,
+                  )
+                  return json.loads(out)
+
+          for aux_yaml in (".github/dependabot.yml", "FUNDING.yml"):
+              if os.path.isfile(aux_yaml):
+                  data = load_yaml(aux_yaml)
+                  if not isinstance(data, dict):
+                      raise SystemExit(f"Expected mapping in {aux_yaml}")
+
+          sha_pin_re = re.compile(r"^[^@]+@[0-9a-f]{40}$")
+          workflow_files = sorted(glob.glob(".github/workflows/*.yml"))
+          if not workflow_files:
+              raise SystemExit("No workflow files found under .github/workflows/")
+
+          for wf_path in workflow_files:
+              doc = load_yaml(wf_path)
+              if not isinstance(doc, dict):
+                  raise SystemExit(f"{wf_path}: top-level YAML must be a mapping")
+              if not doc.get("name"):
+                  raise SystemExit(f"{wf_path}: missing workflow 'name'")
+              if not any(k in doc for k in ("on", True, "true")):
+                  raise SystemExit(f"{wf_path}: missing workflow 'on' trigger")
+              if "permissions" not in doc:
+                  raise SystemExit(f"{wf_path}: missing explicit top-level 'permissions'")
+              jobs = doc.get("jobs")
+              if not isinstance(jobs, dict) or not jobs:
+                  raise SystemExit(f"{wf_path}: missing 'jobs' mapping")
+
+              for job_id, job in jobs.items():
+                  if not isinstance(job, dict):
+                      raise SystemExit(f"{wf_path}: job '{job_id}' must be a mapping")
+                  job_uses = job.get("uses")
+                  if job_uses and not job_uses.startswith("./") and not sha_pin_re.match(job_uses):
+                      raise SystemExit(f"{wf_path}: job '{job_id}' uses unpinned workflow '{job_uses}'")
+                  for idx, step in enumerate(job.get("steps") or []):
+                      if not isinstance(step, dict):
+                          raise SystemExit(f"{wf_path}: job '{job_id}' step #{idx} must be a mapping")
+                      uses = step.get("uses")
+                      if uses and not uses.startswith("./") and not sha_pin_re.match(uses):
+                          raise SystemExit(f"{wf_path}: job '{job_id}' step '{step.get('name', idx)}' uses unpinned action '{uses}'")
+                      run_script = step.get("run")
+                      if run_script is not None:
+                          expr_open = "$" + "{{"
+                          if expr_open in run_script:
+                              raise SystemExit(
+                                  f"{wf_path}: job '{job_id}' step '{step.get('name', idx)}' interpolates GitHub Actions expression inside run: block"
+                              )
+                          if step.get("shell", "bash") == "bash":
+                              proc = subprocess.run(
+                                  ["bash", "-n"],
+                                  input=run_script,
+                                  text=True,
+                                  capture_output=True,
+                              )
+                              if proc.returncode != 0:
+                                  raise SystemExit(
+                                      f"{wf_path}: bash -n failed in job '{job_id}' step '{step.get('name', idx)}': {proc.stderr.strip()}"
+                                  )
+
+          print(f"Validated {len(workflow_files)} workflow files and auxiliary YAML configs.")
+          PY
+
+      - name: Validate Git hook scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for hook_script in git-hooks/pre-commit git-hooks/forward-hook git-hooks/install.sh; do
+            bash -n "${hook_script}"
+            if [[ ! -x "${hook_script}" ]]; then
+              echo "::error file=${hook_script}::Expected ${hook_script} to be executable" >&2
+              exit 1
+            fi
+          done
+
       - name: Download and verify actionlint
         shell: bash
         env:
@@ -53,3 +158,11 @@ jobs:
           set -euo pipefail
 
           "${RUNNER_TEMP}/actionlint" -color
+
+  secret-scan:
+    uses: ./.github/workflows/reusable-security-pr.yml
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      dependency-review: false

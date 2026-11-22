@@ -4,11 +4,11 @@ title = "Default Gitleaks configuration for pre-commit and CI"
 useDefault = true
 
 [[allowlists]]
-description = "Ignore build outputs, dependencies, and OS metadata"
+description = "Ignore root build outputs, dependencies, and OS metadata"
 paths = [
-    '''(^|/)target/''',
-    '''(^|/)node_modules/''',
-    '''(^|/)playwright-report/''',
-    '''(^|/)test-results/''',
+    '''^target/''',
+    '''^node_modules/''',
+    '''^playwright-report/''',
+    '''^test-results/''',
     '''(^|/)\.DS_Store$''',
 ]

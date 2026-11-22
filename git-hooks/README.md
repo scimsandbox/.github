@@ -35,7 +35,11 @@ Copies `pre-commit` and `gitleaks.toml` into that repository's `.git/hooks/` dir
 ## Handling Intentional Test Fixtures / False Positives
 
 1. **Inline comment (single line):** Append `# gitleaks:allow` (or `// gitleaks:allow`) to the line with a dummy test token.
-2. **Per-repo config:** Add a `.gitleaks.toml` at the repository root (takes precedence over `gitleaks.toml`).
+2. **Per-repo config:** Add a `.gitleaks.toml` at the repository root (takes precedence over `gitleaks.toml`). Both `pre-commit` and CI require `[extend]` with `useDefault = true` so built-in Gitleaks rules remain enabled:
+   ```toml
+   [extend]
+   useDefault = true
+   ```
 3. **One-off bypass:**
    ```bash
    SKIP_GITLEAKS=1 git commit -m "..."

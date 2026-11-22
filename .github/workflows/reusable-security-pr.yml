@@ -34,7 +34,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
           filter: blob:none
-          persist-credentials: ${{ github.event.repository.private }}
+          persist-credentials: ${{ github.event.repository.private && github.event_name == 'pull_request' }}
 
       - name: Fetch PR commit range
         if: ${{ github.event_name == 'pull_request' }}
@@ -52,6 +52,14 @@ jobs:
           if ! git merge-base --is-ancestor "${BASE_SHA}" "${HEAD_SHA}" 2>/dev/null; then
             git fetch --no-tags --filter=blob:none --unshallow origin
           fi
+
+      - name: Scrub persisted Git credentials
+        if: ${{ always() && github.event.repository.private && github.event_name == 'pull_request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config --local --unset-all http.https://github.com/.extraheader || true
 
       - name: Download and verify Gitleaks
         shell: bash
@@ -87,6 +95,50 @@ jobs:
 
           CONFIG_ARGS=()
           if [[ -f ".gitleaks.toml" ]]; then
+            python3 - ".gitleaks.toml" <<'PY'
+          import sys
+          try:
+              import tomllib
+          except ModuleNotFoundError:
+              tomllib = None
+
+          path = sys.argv[1]
+          with open(path, "rb") as f:
+              raw = f.read()
+
+          if tomllib is not None:
+              try:
+                  cfg = tomllib.loads(raw.decode("utf-8"))
+              except Exception as exc:
+                  print(f"::error file={path}::Invalid TOML syntax in {path}: {exc}", file=sys.stderr)
+                  sys.exit(1)
+              extend = cfg.get("extend")
+              ok = isinstance(extend, dict) and extend.get("useDefault") is True
+          else:
+              section = ""
+              ok = False
+              for line in raw.decode("utf-8", errors="replace").splitlines():
+                  stripped = line.split("#", 1)[0].strip()
+                  if not stripped:
+                      continue
+                  if stripped.startswith("[") and stripped.endswith("]"):
+                      section = stripped[1:-1].strip()
+                  elif section == "extend" and "=" in stripped:
+                      key, val = [part.strip() for part in stripped.split("=", 1)]
+                      if key == "useDefault":
+                          ok = (val == "true")
+                  elif section == "" and "=" in stripped:
+                      key, val = [part.strip() for part in stripped.split("=", 1)]
+                      if key == "extend.useDefault":
+                          ok = (val == "true")
+
+          if not ok:
+              print(
+                  f"::error file={path}::Custom {path} must include '[extend]' with 'useDefault = true' so Gitleaks' built-in rules are not disabled.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          PY
             CONFIG_ARGS=(--config ".gitleaks.toml")
           fi
 

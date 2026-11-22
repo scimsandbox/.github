@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Ensure Homebrew binaries are available when committing or pushing from GUI Git clients (IDEs, etc.)
+export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}"
+
 # Pass-through wrapper so global core.hooksPath preserves both previous global hooks and repo-local hooks
 HOOK_NAME="$(basename "$0")"
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
